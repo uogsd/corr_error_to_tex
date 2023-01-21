@@ -9,17 +9,38 @@ def dtex(output): # display tex
     display(Math(sp.latex(output)))
 
 class ucfunc:
-    # f_py is the function expression in python format
+    # Variable explanation:
+    
+    # "expression" is the function definition in python format:
+    # 
+    #       Example a*x**2+c+sp.sin(x)
+    #
+    # "constants" are quantities that have no or negligible uncertainties
+    # "dependencies" x_i ... are function arguments f({x_i}) with uncertainties
+    # The index "_N" mean numerical and is used for variables that store numerical values for later replacement
+    
+    # This class uses the formula
+    
+    #########################################################################
+    ### var = g^T V g     with    g_i = (\partial f) / (\partial x_i)     ###
+    #########################################################################
+    
+    # for error propagation
+    
+    # Use class for example like:
+    
+    #   > VDiag_N = [[a_uc**2, 0],[0, v_S1_uc**2]]
+    #  >  res = ucfunc(DS1, ['a', 'v_S1'], [a, v_S1], ['m'], [m], VDiag_N)       # function from class
+    
      
-    def __init__(self, expression, dependencies, dependencies_N, non_dependencies, non_dependencies_N, V_N):
+    def __init__(self, expression, dependencies, dependencies_N, constants, constants_N, V_N):
         # define expression and dependencies of function
         self.dependencies_N = dependencies_N
-        self.non_dependencies_N = non_dependencies_N
+        self.constants_N = constants_N
         self.dim_V = len(dependencies)
         
-        self.V = sp.eye(self.dim_V) # correlation matrix
-        
-        # generate symbolic covariance matrix
+        # generate symbolic covariance matrix with symbols
+        self.V = sp.eye(self.dim_V) 
         self.V_symbols_nonZeroVals = []
         self.V_N_nonZeroVals = []
         for i in range(0, self.dim_V):
@@ -31,47 +52,74 @@ class ucfunc:
                     exec(str(f"self.V[{i},{j}] = tmp")) # for calcilation
                     self.V_N_nonZeroVals.append(V_N[i][j]) # store numerical values for replacement 
         
+        # define symbols for variables
         self.dependencies = []
         for variable in dependencies:
             exec(str(f"{variable} = sp.symbols('{variable}', real=True)"))
             exec(str(f"self.dependencies.append({variable})"))
             
-        self.non_dependencies = []
-        for variable in non_dependencies:
+        # define symbols for constants
+        self.constants = []
+        for variable in constants:
             exec(str(f"{variable} = sp.symbols('{variable}', real=True)"))
-            exec(str(f"self.non_dependencies.append({variable})"))
+            exec(str(f"self.constants.append({variable})"))
         
+        # define equation using, the symbol definitions from above are being used now!
         self.expression = eval(expression)
         
-        # define g
+        # define g (see formula above)
         g = []
         for variable in self.dependencies:
             g.append(sp.diff(self.expression, variable))
         self.g = sp.Matrix(g)
         
-        # calculate variance formula for corelated uncertainties
+        # calculate variance (see formula above)
         self.var = ((self.g).T*(self.V)*(self.g))[0]
         
-    def expression_tex(self):
-        return sp.latex(self.expression)
+        # use result for uncertainty sigma
+        self.sigma = sp.sqrt(self.var)
+        
+        
+        
+    # Methods for access
     
-    def var_tex(self):
-        return sp.latex(self.var)
+    def tex(self, x):   # see x in TEX format
+        return sp.latex(x)
     
-    def sigma_tex(self):
-        return sp.latex(sp.sqrt(self.var))
     
-    def var_N(self):
-        varN = self.var # numerical
+    def get_numerical(self, x):            # calculate numerical value of expression part x
+        x_N = x
         for index, variable in enumerate(self.dependencies):
-            varN = varN.subs(variable, self.dependencies_N[index])
-        for index, variable in enumerate(self.non_dependencies):
-            varN = varN.subs(variable, self.non_dependencies_N[index])
+            x_N = x_N.subs(variable, self.dependencies_N[index])
+        for index, variable in enumerate(self.constants):
+            x_N = x_N.subs(variable, self.constants_N[index])
             
         for index, variable in enumerate(self.V_symbols_nonZeroVals):
-            varN = varN.subs(variable, self.V_N_nonZeroVals[index]) # replace symbol with numerical value
-            
-        return varN
+            x_N = x_N.subs(variable, self.V_N_nonZeroVals[index]) # replace symbol with numerical value
+    
+        return x_N
+    
+    
+    def var_N(self):
+        return self.get_numerical(self.var)
     
     def sigma_N(self):
-        return sp.sqrt(self.var_N())
+        return sp.sqrt(self.get_numerical(self.var))
+    
+    def N(self):
+        return str(f"{self.get_numerical(self.expression)} \u00B1 {self.sigma_N()} ")
+        
+    def formula(self):
+        return str(f"{self.tex(self.expression)} \u00B1 {self.tex(self.sigma)}")
+    
+    def all(self):
+        print("Using")
+        display(Math("\sigma = g^T V g"))
+        print("with")
+        display(Math("g_i = \partial_i f(\{x_i\})"))
+        print("we obtain")
+        display(Math(self.formula()))
+        print("\nResult in LaTex - Form:\n")
+        print(self.formula())
+        print("\n\nNumerical value of result\n")
+        print(self.N())
