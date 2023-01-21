@@ -74,4 +74,4 @@ class ucfunc:
         return varN
     
     def sigma_N(self):
-        return np.sqrt(self.var_N())
+        return sp.sqrt(self.var_N())
